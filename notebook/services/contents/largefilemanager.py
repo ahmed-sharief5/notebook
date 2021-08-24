@@ -27,7 +27,7 @@ class LargeFileManager(FileContentsManager):
                 if chunk == 1:
                     self.log.debug("Saving %s", os_path)
                     self.run_pre_save_hook(model=model, path=path)
-                    super()._save_file(os_path, model['content'], model.get('format'))
+                    super()._save_file(os_path, model['content'], model.get('format'), path)
                 else:
                     self._save_large_file(os_path, model['content'], model.get('format'))
             except web.HTTPError:

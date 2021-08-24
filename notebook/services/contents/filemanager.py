@@ -37,6 +37,9 @@ from notebook.transutils import _
 
 from os.path import samefile
 
+from .s3_manager import S3_Manager
+from pathlib import Path
+
 _script_exporter = None
 
 
@@ -64,14 +67,23 @@ def _post_save_script(model, os_path, contents_manager, **kwargs):
         f.write(script)
 
 
-class FileContentsManager(FileManagerMixin, ContentsManager):
+class FileContentsManager(FileManagerMixin, ContentsManager, S3_Manager):
 
     root_dir = Unicode(config=True)
 
     @default('root_dir')
     def _default_root_dir(self):
+        directory = os.environ["root_dir"]
         try:
-            return self.parent.notebook_dir
+            self.log.info("_default_root_dir {}".format(self.parent.notebook_dir + "/" + directory))
+            if not os.path.exists(directory):
+                try:
+                    self.log.info("Creating user root directory {} in local".format(directory))
+                    os.makedirs(directory)
+                    self.create_s3_directory(directory)
+                except Exception as error:
+                    self.log.error("Error occured in creating user roor directory {} due to {}".format(directory, error))
+            return self.parent.notebook_dir + "/" + directory
         except AttributeError:
             return getcwd()
 
@@ -445,12 +457,14 @@ class FileContentsManager(FileManagerMixin, ContentsManager):
         return model
 
     def _save_directory(self, os_path, model, path=''):
+        # print("create directory", os_path)
         """create a directory"""
         if is_hidden(os_path, self.root_dir) and not self.allow_hidden:
             raise web.HTTPError(400, u'Cannot create hidden directory %r' % os_path)
         if not os.path.exists(os_path):
             with self.perm_to_403():
                 os.mkdir(os_path)
+                self.create_s3_directory(os.environ["root_dir"] + "/" + path)
         elif not os.path.isdir(os_path):
             raise web.HTTPError(400, u'Not a directory: %s' % (os_path))
         else:
@@ -474,13 +488,13 @@ class FileContentsManager(FileManagerMixin, ContentsManager):
             if model['type'] == 'notebook':
                 nb = nbformat.from_dict(model['content'])
                 self.check_and_sign(nb, path)
-                self._save_notebook(os_path, nb)
+                self._save_notebook(os_path, nb, path)
                 # One checkpoint should always exist for notebooks.
                 if not self.checkpoints.list_checkpoints(path):
                     self.create_checkpoint(path)
             elif model['type'] == 'file':
                 # Missing format will be handled internally by _save_file.
-                self._save_file(os_path, model['content'], model.get('format'))
+                self._save_file(os_path, model['content'], model.get('format'), path)
             elif model['type'] == 'directory':
                 self._save_directory(os_path, model, path)
             else:

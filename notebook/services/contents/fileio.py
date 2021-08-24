@@ -26,6 +26,8 @@ from traitlets import Bool
 
 from base64 import encodebytes, decodebytes
 
+from .s3_manager import S3_Manager
+
 
 def replace_file(src, dst):
     """ replace dst with src
@@ -169,7 +171,7 @@ def _simple_writing(path, text=True, encoding='utf-8', log=None, **kwargs):
 
 
 
-class FileManagerMixin(Configurable):
+class FileManagerMixin(Configurable, S3_Manager):
     """
     Mixin for ContentsAPI classes that interact with the filesystem.
 
@@ -187,6 +189,8 @@ class FileManagerMixin(Configurable):
 
     log : logging.Logger
     """
+
+    # s3_manager = S3_Manager()
 
     use_atomic_writing = Bool(True, config=True, help=
     """By default notebooks are saved on disk on a temporary file and then if successfully written, it replaces the old ones.
@@ -285,10 +289,13 @@ class FileManagerMixin(Configurable):
             replace_file(tmp_path, os_path)
             return self._read_notebook(os_path, as_version)
 
-    def _save_notebook(self, os_path, nb):
+    def _save_notebook(self, os_path, nb, path=''):
+        self.log.info("save notebook with os_path={}".format(os_path))
         """Save a notebook to an os_path."""
         with self.atomic_writing(os_path, encoding='utf-8') as f:
             nbformat.write(nb, f, version=nbformat.NO_CONVERT)
+        with self.open(os_path, 'rb') as f:
+            self.save_s3_file(os.environ["root_dir"] + "/" + os.path.split(os_path)[1], f)
 
     def _read_file(self, os_path, format):
         """Read a non-notebook file.
@@ -319,7 +326,8 @@ class FileManagerMixin(Configurable):
                     ) from e
         return encodebytes(bcontent).decode('ascii'), 'base64'
 
-    def _save_file(self, os_path, content, format):
+    def _save_file(self, os_path, content, format, path=''):
+        self.log.info("save file with os_path={}, format={}".format(os_path, format))
         """Save content of a generic file."""
         if format not in {'text', 'base64'}:
             raise HTTPError(
@@ -339,3 +347,5 @@ class FileManagerMixin(Configurable):
 
         with self.atomic_writing(os_path, text=False) as f:
             f.write(bcontent)
+        with self.open(os_path, 'rb') as f:
+            self.save_s3_file(os.environ["root_dir"] + "/" + path, f)

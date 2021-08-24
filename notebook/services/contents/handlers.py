@@ -7,6 +7,7 @@ Preliminary documentation at https://github.com/ipython/ipython/wiki/IPEP-27%3A-
 # Distributed under the terms of the Modified BSD License.
 
 import json
+import os
 
 from tornado import gen, web
 
@@ -16,6 +17,8 @@ from jupyter_client.jsonutil import date_default
 from notebook.base.handlers import (
     IPythonHandler, APIHandler, path_regex,
 )
+
+from .s3_manager import S3_Manager
 
 
 def validate_model(model, expect_content):
@@ -64,7 +67,8 @@ def validate_model(model, expect_content):
             )
 
 
-class ContentsHandler(APIHandler):
+class ContentsHandler(APIHandler, S3_Manager):
+
 
     def location_url(self, path):
         """Return the full URL location of a file.
@@ -123,6 +127,11 @@ class ContentsHandler(APIHandler):
         if model is None:
             raise web.HTTPError(400, u'JSON body missing')
         model = yield maybe_future(cm.update(model, path))
+        # print("model", path, model)
+        dir_path = ""
+        if model["type"] == "directory":
+            dir_path = "/"
+        self.rename_s3_directory_file(os.environ["root_dir"] + "/" +path.strip("/"), os.environ["root_dir"] + "/" +model["path"], dir_path)
         validate_model(model, expect_content=False)
         self._finish_model(model)
     
@@ -235,6 +244,11 @@ class ContentsHandler(APIHandler):
         cm = self.contents_manager
         self.log.warning('delete %s', path)
         yield maybe_future(cm.delete(path))
+        dir_path = ""
+        if os.path.splitext(path)[1] == "":
+            dir_path = "/"
+        # print("delete model", os.path.splitext(path), path)
+        self.delete_s3_directory_file(os.environ["root_dir"] + path, dir_path)
         self.set_status(204)
         self.finish()
 
