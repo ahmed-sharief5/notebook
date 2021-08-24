@@ -1,9 +1,11 @@
+import os
 import boto3
+
 s3_client = boto3.client('s3')
 
 class S3_Manager():
     def __init__(self):
-        self.bucket_name = "fsot-cloudfront-test-bucket"
+        self.bucket_name = os.environ["s3_bucket"]
 
     def create_s3_directory(self, directory_name, dir_path="/"):
         try:
